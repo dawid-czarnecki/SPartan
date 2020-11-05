@@ -1,4 +1,4 @@
-#!/bin/python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
 SPartan is a Frontpage and Sharepoint eviscerator, great for mutilating Sharepoint sites.
@@ -12,6 +12,7 @@ Features:
 - Saves state from previous scans
 - Site crawling
 - Accepts NTLM creds for authenticated scans
+- Proxy support
 
 
 Prerequisite# are:
@@ -21,11 +22,13 @@ Prerequisite# are:
 Author: Special K
 Version: 1.0 (20-11-2014)
 
+Modifications (proxy support and a few fixes): Dawid Czarnecki
+
 """
 import argparse,requests,sys,os,threading,bs4,warnings,random
 from threading import Lock
 from requests_ntlm import HttpNtlmAuth
-
+from os.path import dirname, realpath
 
 warnings.filterwarnings("ignore")
 
@@ -137,7 +140,7 @@ def frontpage_fingerprint(url):
 
 
 def frontpage_bin(url):
-    with open("front_bin.txt") as f:
+    with open("{}/front_bin.txt".format(dirname(realpath(__file__)))) as f:
         layoutPaths = f.readlines()
     for path in layoutPaths:
         thread = URLThread(url + '/' + stringCleaner(path))
@@ -146,7 +149,7 @@ def frontpage_bin(url):
 
 
 def frontpage_pvt(url):
-    with open("front_pvt.txt") as f:
+    with open("{}/front_pvt.txt".format(dirname(realpath(__file__)))) as f:
         layoutPaths = f.readlines()
     for path in layoutPaths:
         thread = URLThread(url + '/' + stringCleaner(path))
@@ -155,7 +158,7 @@ def frontpage_pvt(url):
 
 
 def frontpage_services(url):
-    with open("front_serv.txt") as f:
+    with open("{}/front_serv.txt".format(dirname(realpath(__file__)))) as f:
         layoutPaths = f.readlines()
     for path in layoutPaths:
         thread = URLThread(url + '/' + stringCleaner(path))
@@ -233,7 +236,7 @@ def sharepoint_fingerprint(url):
 
 
 def sharepoint_layouts(url):
-    with open("sp_layouts.txt") as f:
+    with open("{}/sp_layouts.txt".format(dirname(realpath(__file__)))) as f:
         layoutPaths = f.readlines()
     threads = []
     for path in layoutPaths:
@@ -246,7 +249,7 @@ def sharepoint_layouts(url):
 
 
 def sharepoint_forms(url):
-    with open("sp_forms.txt") as f:
+    with open("{}/sp_forms.txt".format(dirname(realpath(__file__)))) as f:
         formPaths = f.readlines()
     threads = []
     for path in formPaths:
@@ -259,7 +262,7 @@ def sharepoint_forms(url):
 
 
 def sharepoint_catalogs(url):
-    with open("sp_catalogs.txt") as f:
+    with open("{}/sp_catalogs.txt".format(dirname(realpath(__file__)))) as f:
         catPaths = f.readlines()
     threads = []
     for path in catPaths:
@@ -290,21 +293,22 @@ def soap_services(url):
         t.join()
 
 def getVerbs(u):
+    global proxy, ignore_ssl
     url = u.strip()
     headers = {'user-agent': random.choice(agents).strip(),}
     try:
         verbs = []
-        if requests.get(url,headers=headers).status_code == 200:
+        if requests.get(url,headers=headers, proxies=proxy, verify=ignore_ssl).status_code == 200:
             verbs.append('GET')
-        if requests.post(url, 'test',headers=headers).status_code == 200:
+        if requests.post(url, 'test',headers=headers, proxies=proxy, verify=ignore_ssl).status_code == 200:
             verbs.append('POST')
-        if requests.head(url,headers=headers).status_code == 200:
+        if requests.head(url,headers=headers, proxies=proxy, verify=ignore_ssl).status_code == 200:
             verbs.append('HEAD')
-        if requests.delete(url,headers=headers).status_code == 200:
+        if requests.delete(url,headers=headers, proxies=proxy, verify=ignore_ssl).status_code == 200:
             verbs.append('DELETE')
-        if requests.put(url, 'test',headers=headers).status_code == 200:
+        if requests.put(url, 'test',headers=headers, proxies=proxy, verify=ignore_ssl).status_code == 200:
             verbs.append('PUT')
-        if requests.options(url,headers=headers).status_code == 200:
+        if requests.options(url,headers=headers, proxies=proxy, verify=ignore_ssl).status_code == 200:
             verbs.append('OPTIONS')
 
         return verbs
@@ -314,6 +318,7 @@ def getVerbs(u):
 
 
 def findPuttable():
+    global proxy, ignore_ssl
     #Find directories which are puttable
     headers = {'user-agent': random.choice(agents).strip(),}
     paths = []
@@ -328,9 +333,9 @@ def findPuttable():
         for path in paths:
             resp = None
             if authed:
-                resp = requests.options(path, auth=HttpNtlmAuth(username, password),headers=headers)
+                resp = requests.options(path, auth=HttpNtlmAuth(username, password),headers=headers, proxies=proxy, verify=ignore_ssl)
             else:
-                resp = requests.options(path,headers=headers)
+                resp = requests.options(path,headers=headers, proxies=proxy, verify=ignore_ssl)
 
             if resp is not None and resp.status_code == 200:
                 if 'allow' in resp.headers:
@@ -341,6 +346,7 @@ def findPuttable():
 
 
 def authenticate(url, userpass, cString):
+    global proxy, ignore_ssl
     headers = {'user-agent': random.choice(agents).strip(),}
     try:
         global username
@@ -353,7 +359,7 @@ def authenticate(url, userpass, cString):
             username = userpass.split(':')[0]
             password = userpass.split(':')[1]
             print '[+] Authenticating: %s %s' % (url, username)
-            response = requests.get(url, auth=HttpNtlmAuth(username, password), verify=ignore_ssl,headers=headers)
+            response = requests.get(url, auth=HttpNtlmAuth(username, password), verify=ignore_ssl,headers=headers, proxies=proxy)
             if response.status_code == 200:
                 print '[+] Authenticated...Have fun!: %s' % (response.status_code)
                 authed = True
@@ -369,7 +375,7 @@ def authenticate(url, userpass, cString):
                 params = c.partition('=')
                 cookie.update({params[0]:params[2]})
             print '[+] Authenticating: %s' % (url)
-            response = requests.get(url, cookies=cookie, verify=ignore_ssl,headers=headers)
+            response = requests.get(url, cookies=cookie, verify=ignore_ssl,headers=headers, proxies=proxy)
             if response.status_code == 200:
                 print '[+] Authenticated...Have fun!: %s' % (response.status_code)
                 authed = True
@@ -383,6 +389,7 @@ def authenticate(url, userpass, cString):
 
 #Entrail Crawler
 def crawler(url):
+    global proxy, ignore_ssl
     queue = foundURLs[:] #clone foundURLs. queue used for processing URLs and foundURLs used to prevent rescans
     urlList = url.split('/')
     baseURL = '/'.join(urlList[:3])
@@ -393,11 +400,11 @@ def crawler(url):
 
             if authed:
                 if cookie is not None:
-                    response = requests.get(qURL, cookies=cookie, verify=ignore_ssl,headers=headers)
+                    response = requests.get(qURL, cookies=cookie, verify=ignore_ssl,headers=headers, proxies=proxy)
                 else:
-                    response = requests.get(qURL, auth=HttpNtlmAuth(username, password), verify=ignore_ssl,headers=headers)
+                    response = requests.get(qURL, auth=HttpNtlmAuth(username, password), verify=ignore_ssl,headers=headers, proxies=proxy)
             else:
-                response = requests.get(qURL, verify=ignore_ssl,headers=headers)
+                response = requests.get(qURL, verify=ignore_ssl,headers=headers, proxies=proxy)
             soup = bs4.BeautifulSoup(response.text)
             for link in soup.find_all('a'):
                 hLink = link.get('href')
@@ -425,18 +432,26 @@ def crawler(url):
 
 #Keyword scanner
 def keywordScanner(keyword):
+    global proxy, ignore_ssl
     headers = {'user-agent': random.choice(agents).strip(),}
     try:
         for url in foundURLs:
-                resp = requests.get(url, verify=ignore_ssl,headers=headers)
+                resp = requests.get(url, verify=ignore_ssl,headers=headers, proxies=proxy)
                 if keyword in resp.text or keyword in url:
                     printer('[+] Found keyword %s in %s' % (keyword, url), GREEN)
     except Exception, e:
         print e
 
 def fileNamer(url):
-    fileName = url.strip('https://').strip('http://').strip('/')
-    fileName = fileName.replace(":","")
+    if url.startswith('https://'):
+        fileName = url[8:]
+    elif url.startswith('http://'):
+        fileName = url[7:]
+    else:
+        fileName = url
+
+    # fileName = url.strip('https://').strip('http://').strip('/')
+    fileName = fileName.strip('/').replace(":","")
     if '/' in fileName:
         return fileName.split('/')[0]
     return fileName
@@ -487,6 +502,10 @@ class URLThread(threading.Thread):
         self.url = urlName
         self.resp = ''
         self.lock = Lock()
+        if 'proxy' in globals():
+            self.proxy = proxy
+        else:
+            self.proxy = None
 
     def run(self):
         threadLimiter.acquire()
@@ -500,6 +519,7 @@ class URLThread(threading.Thread):
     def urlProcessor(self, url):
         global foundURLs
         global counter
+        global ignore_ssl
         ERROR1 = 'An error occurred'
         ERROR2 = 'Correlation ID'
         headers = {'user-agent': random.choice(agents).strip(),}
@@ -522,11 +542,11 @@ class URLThread(threading.Thread):
 
                 if authed:
                     if cookie is not None:
-                        fakeResp = requests.get(fakeUrl, cookies=cookie, verify=ignore_ssl,headers=headers)
+                        fakeResp = requests.get(fakeUrl, cookies=cookie, verify=ignore_ssl,headers=headers, proxies=self.proxy)
                     else:
-                        fakeResp = requests.get(fakeUrl, auth=HttpNtlmAuth(username, password), verify=ignore_ssl,headers=headers)
+                        fakeResp = requests.get(fakeUrl, auth=HttpNtlmAuth(username, password), verify=ignore_ssl,headers=headers, proxies=self.proxy)
                 else:
-                    fakeResp = requests.get(fakeUrl, verify=ignore_ssl,headers=headers)
+                    fakeResp = requests.get(fakeUrl, verify=ignore_ssl,headers=headers, proxies=self.proxy)
 
                 fakeRespSize = len(fakeResp.text)
 
@@ -537,11 +557,11 @@ class URLThread(threading.Thread):
             #Do request with legit url
             if authed:
                 if cookie is not None:
-                    self.resp = requests.get(url, cookies=cookie, verify=ignore_ssl,headers=headers)
+                    self.resp = requests.get(url, cookies=cookie, verify=ignore_ssl,headers=headers, proxies=self.proxy)
                 else:
-                    self.resp = requests.get(url, auth=HttpNtlmAuth(username, password), verify=ignore_ssl,headers=headers)
+                    self.resp = requests.get(url, auth=HttpNtlmAuth(username, password), verify=ignore_ssl,headers=headers, proxies=self.proxy)
             else:
-                self.resp = requests.get(url, verify=ignore_ssl,headers=headers)
+                self.resp = requests.get(url, verify=ignore_ssl,headers=headers, proxies=self.proxy)
 
             respSize = len(self.resp.text)
 
@@ -582,15 +602,15 @@ class URLThread(threading.Thread):
             print e
 
     def sendData(self, url, data, headers):
-        global counter
+        global counter, ignore_ssl
         try:
             if authed:
                 if cookie is not None:
-                    self.resp = requests.post(url, cookies=cookie, data=data, headers=headers, verify=ignore_ssl)
+                    self.resp = requests.post(url, cookies=cookie, data=data, headers=headers, verify=ignore_ssl, proxies=self.proxy)
                 else:
-                    self.resp = requests.post(url, auth=HttpNtlmAuth(username, password), data=data, headers=headers, verify=ignore_ssl)
+                    self.resp = requests.post(url, auth=HttpNtlmAuth(username, password), data=data, headers=headers, verify=ignore_ssl, proxies=self.proxy)
             else:
-                self.resp = requests.post(url, data=data, headers=headers, verify=ignore_ssl)
+                self.resp = requests.post(url, data=data, headers=headers, verify=ignore_ssl, proxies=self.proxy)
             respSize = len(self.resp.text)
 
             if self.resp is not None:
@@ -620,6 +640,7 @@ class URLThread(threading.Thread):
 
     def fileDownloader(self, url):
         #Download files to folder
+        global ignore_ssl
 
         extList = url.split('.')
         extension = extList.pop()
@@ -630,11 +651,11 @@ class URLThread(threading.Thread):
 
             if authed:
                 if cookie is not None:
-                    self.resp = requests.get(url, cookies=cookie, stream=True, verify=ignore_ssl,headers=headers)
+                    self.resp = requests.get(url, cookies=cookie, stream=True, verify=ignore_ssl,headers=headers, proxies=self.proxy)
                 else:
-                    self.resp = requests.get(url, auth=HttpNtlmAuth(username, password), stream=True, verify=ignore_ssl,headers=headers)
+                    self.resp = requests.get(url, auth=HttpNtlmAuth(username, password), stream=True, verify=ignore_ssl,headers=headers, proxies=self.proxy)
             else:
-                self.resp = requests.get(url, stream=True,headers=headers)
+                self.resp = requests.get(url, stream=True,headers=headers, proxies=self.proxy, verify=ignore_ssl)
 
             if 'asp' in extension or 'aspx' in extension:
                 if '<%' not in self.resp.text and '%>' not in self.resp.text:
@@ -698,11 +719,17 @@ if __name__ == "__main__":
     parser.add_argument('--cookie', dest='cookie', action='store', help="use a cookie for authenticated scans")
     parser.add_argument('-d', dest='download', action='store_true', help="download pdf, doc, docx, txt, config, xml, xls, xlsx, webpart, config, conf, stp, csv and asp/aspx(uninterpreted)")
     parser.add_argument('-l', dest='login', action='store', help="provide credentials for authentication to Sharepoint",
-                        metavar=('domain\user:password'))
+                        metavar=('domain\\user:password'))
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', help="Render verbose output. By default SPartan will only render found resources.")
     parser.add_argument('-i', '--ignore-ssl-verification', dest='ignore_ssl', action='store_false', help="Don't attempt to verify SSL certificates as valid before making a request. This is defaulted to false.")
+    parser.add_argument('--proxy', dest='proxy', action='store', help="use a proxy for scans. Example: http://127.0.0.1:8080")
     args = parser.parse_args()
 
+    global proxy
+    if args.proxy is not None and args.proxy != '':
+        proxy = {'http': args.proxy, 'https': args.proxy}
+    else:
+        proxy = None
     authed = False
     try:
         if args.url:
